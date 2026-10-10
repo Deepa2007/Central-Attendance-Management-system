@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: attendance_postgres
+    environment:
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: attendance
+      POSTGRES_DB: attendance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendance"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: attendance_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      # Database - use postgres in docker
+      USE_POSTGRES: "True"
+      DATABASE_URL: postgresql+psycopg2://attendance:attendance@postgres:5432/attendance_db
+      DATABASE_URL_DEV: postgresql+psycopg2://attendance:attendance@postgres:5432/attendance_db
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-super-secret-docker-key-change-me}
+      # Office Config
+      OFFICE_LAT: ${OFFICE_LAT:-17.3850}
+      OFFICE_LNG: ${OFFICE_LNG:-78.4867}
+      GEOFENCE_RADIUS_KM: ${GEOFENCE_RADIUS_KM:-0.2}
+      REQUIRED_DAYS: ${REQUIRED_DAYS:-3}
+      REQUIRED_HOURS: ${REQUIRED_HOURS:-15}
+      MIN_DAILY_HOURS: ${MIN_DAILY_HOURS:-5.0}
+      # SMTP - pass from .env
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      COMPANY_NAME: ${COMPANY_NAME:-YourCompany}
+      ENABLE_SCHEDULER: "True"
+    volumes:
+      - ../app:/app/app
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    container_name: attendance_frontend
+    working_dir: /app
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ../../central-attendance-system-frontend:/app
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
